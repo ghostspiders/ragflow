@@ -35,7 +35,7 @@ from api.db import SerializedType, ParserType
 from api import settings
 from api import utils
 
-
+#单例模式装饰器
 def singleton(cls, *args, **kw):
     instances = {}
 
@@ -47,7 +47,7 @@ def singleton(cls, *args, **kw):
 
     return _singleton
 
-
+#字段类型定义
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {
     "create",
@@ -57,7 +57,7 @@ AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {
     "read_access",
     "write_access"}
 
-
+#自定义字段类型
 class TextFieldType(Enum):
     MYSQL = 'LONGTEXT'
     POSTGRES = 'TEXT'
@@ -147,7 +147,7 @@ def auto_date_timestamp_db_field():
 def remove_field_name_prefix(field_name):
     return field_name[2:] if field_name.startswith('f_') else field_name
 
-
+#数据库模型基类
 class BaseModel(Model):
     create_time = BigIntegerField(null=True, index=True)
     create_date = DateTimeField(null=True, index=True)
@@ -271,7 +271,7 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook,
                                                   object_pairs_hook=object_pairs_hook, **kwargs)
 
-
+#数据库连接和锁机制
 class PooledDatabase(Enum):
     MYSQL = PooledMySQLDatabase
     POSTGRES = PooledPostgresqlDatabase
@@ -400,30 +400,63 @@ def close_connection():
     except Exception as e:
         logging.exception(e)
 
-
+#数据库模型定义
 class DataBaseModel(BaseModel):
     class Meta:
         database = DB
 
 
+# 使用数据库连接上下文装饰器，确保函数在执行期间保持数据库连接
 @DB.connection_context()
 def init_database_tables(alter_fields=[]):
+    """
+    初始化数据库表。
+    遍历当前模块中所有继承自 DataBaseModel 的类，并尝试为每个类创建对应的数据库表。
+    如果创建表失败，记录错误并抛出异常。
+
+    :param alter_fields: 需要修改的字段列表（当前未使用）
+    """
+    # 获取当前模块中的所有类
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+
+    # 存储数据库模型类的列表
     table_objs = []
+
+    # 存储创建失败的表名列表
     create_failed_list = []
+
+    # 遍历所有类
     for name, obj in members:
+        # 过滤出继承自 DataBaseModel 且不是 DataBaseModel 本身的类
         if obj != DataBaseModel and issubclass(obj, DataBaseModel):
+            # 将数据库模型类添加到列表中
             table_objs.append(obj)
+
+            # 记录调试日志，开始创建表
             logging.debug(f"start create table {obj.__name__}")
+
             try:
+                # 尝试创建表
                 obj.create_table()
+
+                # 记录调试日志，表创建成功
                 logging.debug(f"create table success: {obj.__name__}")
             except Exception as e:
+                # 如果创建表失败，记录异常信息
                 logging.exception(e)
+
+                # 将失败的表名添加到失败列表中
                 create_failed_list.append(obj.__name__)
+
+    # 如果有表创建失败
     if create_failed_list:
+        # 记录错误日志，提示哪些表创建失败
         logging.error(f"create tables failed: {create_failed_list}")
+
+        # 抛出异常，提示哪些表创建失败
         raise Exception(f"create tables failed: {create_failed_list}")
+
+    # 执行数据库迁移操作
     migrate_db()
 
 
@@ -987,7 +1020,7 @@ class CanvasTemplate(DataBaseModel):
     class Meta:
         db_table = "canvas_template"
 
-
+#数据库迁移
 def migrate_db():
     with DB.transaction():
         migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
